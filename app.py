@@ -90,6 +90,26 @@ st.markdown("""
 # Main title
 st.markdown('<h1 class="main-header">🏏 Cricket Win Prediction System</h1>', unsafe_allow_html=True)
 
+# Initialize session state variables
+if 'models' not in st.session_state:
+    st.session_state.models = None
+if 'scores' not in st.session_state:
+    st.session_state.scores = None
+if 'X_train' not in st.session_state:
+    st.session_state.X_train = None
+if 'X_test' not in st.session_state:
+    st.session_state.X_test = None
+if 'y_train' not in st.session_state:
+    st.session_state.y_train = None
+if 'y_test' not in st.session_state:
+    st.session_state.y_test = None
+if 'encoders' not in st.session_state:
+    st.session_state.encoders = None
+if 'scaler' not in st.session_state:
+    st.session_state.scaler = None
+if 'evaluation_results' not in st.session_state:
+    st.session_state.evaluation_results = None
+
 # Sidebar for navigation
 st.sidebar.title("🎯 Navigation")
 page = st.sidebar.selectbox("Choose a page:", 
@@ -674,7 +694,21 @@ elif page == "🔮 Prediction":
     st.markdown('<h2 class="sub-header">🔮 Match Win Prediction</h2>', unsafe_allow_html=True)
     
     data = load_data()
-    if data is not None and 'models' in st.session_state:
+    if data is not None:
+        # Check if models are trained
+        if 'models' not in st.session_state:
+            st.warning("⚠️ Please train the models first by visiting the 'Model Training' page.")
+            st.info("👆 Go to **Model Training** page and click '🚀 Start Model Training' to train the models.")
+            return
+        
+        # Check if all required session state variables exist
+        required_states = ['models', 'encoders']
+        missing_states = [state for state in required_states if state not in st.session_state]
+        
+        if missing_states:
+            st.error(f"❌ Missing required data: {missing_states}")
+            st.info("Please retrain the models from the Model Training page.")
+            return
         
         # Create prediction interface
         st.subheader("⚙️ Match Configuration")
@@ -711,9 +745,9 @@ elif page == "🔮 Prediction":
         
         if st.button("🎯 Predict Win Probability", key="predict_button"):
             # Prepare input data
-            le_batting, le_bowling, le_city = st.session_state.encoders
-            
             try:
+                le_batting, le_bowling, le_city = st.session_state.encoders
+                
                 batting_encoded = le_batting.transform([batting_team])[0]
                 bowling_encoded = le_bowling.transform([bowling_team])[0]
                 city_encoded = le_city.transform([city])[0]
@@ -726,14 +760,22 @@ elif page == "🔮 Prediction":
                 probabilities = {}
                 
                 for name, model in st.session_state.models.items():
-                    pred = model.predict(input_data)[0]
-                    if hasattr(model, 'predict_proba'):
-                        prob = model.predict_proba(input_data)[0][1]  # Probability of winning
-                    else:
-                        prob = pred  # For models without predict_proba
-                    
-                    predictions[name] = pred
-                    probabilities[name] = prob
+                    try:
+                        pred = model.predict(input_data)[0]
+                        if hasattr(model, 'predict_proba'):
+                            prob = model.predict_proba(input_data)[0][1]  # Probability of winning
+                        else:
+                            prob = pred  # For models without predict_proba
+                        
+                        predictions[name] = pred
+                        probabilities[name] = prob
+                    except Exception as e:
+                        st.warning(f"⚠️ Error with {name}: {str(e)}")
+                        continue
+                
+                if not predictions:
+                    st.error("❌ No models could make predictions. Please retrain the models.")
+                    return
                 
                 # Ensemble prediction (voting)
                 ensemble_prob = np.mean(list(probabilities.values()))
@@ -767,27 +809,248 @@ elif page == "🔮 Prediction":
                 st.dataframe(model_results, use_container_width=True)
                 
                 # Visualization
-                fig = px.bar(x=list(probabilities.keys()), y=list(probabilities.values()),
-                           title='Win Probability by Model',
-                           labels={'x': 'Model', 'y': 'Win Probability'},
-                           color=list(probabilities.values()),
-                           color_continuous_scale='RdYlGn')
-                fig.update_layout(showlegend=False)
-                fig.add_hline(y=0.5, line_dash="dash", line_color="black", 
-                             annotation_text="Decision Boundary")
-                st.plotly_chart(fig, use_container_width=True)
+                if probabilities:
+                    fig = px.bar(x=list(probabilities.keys()), y=list(probabilities.values()),
+                               title='Win Probability by Model',
+                               labels={'x': 'Model', 'y': 'Win Probability'},
+                               color=list(probabilities.values()),
+                               color_continuous_scale='RdYlGn')
+                    fig.update_layout(showlegend=False)
+                    fig.add_hline(y=0.5, line_dash="dash", line_color="black", 
+                                 annotation_text="Decision Boundary")
+                    st.plotly_chart(fig, use_container_width=True)
                 
             except ValueError as e:
-                st.error(f"Error: {e}. Please check if the selected team/city exists in the training data.")
+                st.error(f"❌ Error: {e}. Please check if the selected team/city exists in the training data.")
+            except Exception as e:
+                st.error(f"❌ Unexpected error: {str(e)}")
     
     else:
-        st.warning("⚠️ Please train the models first by visiting the 'Model Training' page.")
+        st.error("❌ Unable to load data. Please check if the data file exists.")
 
 # Model Comparison Page
 elif page == "📈 Model Comparison":
     st.markdown('<h2 class="sub-header">📈 Detailed Model Comparison</h2>', unsafe_allow_html=True)
     
-    if 'models' in st.session_state:
+    # Check if models are trained
+    if 'models' not in st.session_state:
+        st.warning("⚠️ Please train the models first by visiting the 'Model Training' page.")
+        st.info("👆 Go to **Model Training** page and click '🚀 Start Model Training' to train the models.")
+    else:
+        # Check if we have test data
+        if 'X_test' not in st.session_state or 'y_test' not in st.session_state:
+            st.warning("⚠️ Test data not available. Please retrain the models to generate test data.")
+            st.info("👆 Go to **Model Training** page and retrain the models to generate test data.")
+        else:
+            # Evaluate all models on test set
+            if st.button("📊 Evaluate Models on Test Set"):
+                with st.spinner("Evaluating models on test set..."):
+                    
+                    evaluation_results = {}
+                    
+                    for name, model in st.session_state.models.items():
+                        try:
+                            metrics, y_pred, y_pred_proba = evaluate_model(
+                                model, st.session_state.X_test, st.session_state.y_test
+                            )
+                            if metrics is not None:
+                                evaluation_results[name] = {
+                                    'metrics': metrics,
+                                    'predictions': y_pred,
+                                    'probabilities': y_pred_proba
+                                }
+                        except Exception as e:
+                            st.warning(f"⚠️ Error evaluating {name}: {str(e)}")
+                            continue
+                    
+                    if not evaluation_results:
+                        st.error("❌ No models could be evaluated. Please check the data and retrain.")
+                        return
+                    
+                    st.session_state.evaluation_results = evaluation_results
+                
+                st.success("✅ Model evaluation completed!")
+                
+                # Create comprehensive comparison
+                st.subheader("📊 Performance Metrics Comparison")
+                
+                # Metrics table
+                metrics_data = []
+                for name, results in evaluation_results.items():
+                    metrics = results['metrics']
+                    metrics_data.append({
+                        'Model': name,
+                        'Accuracy': f"{metrics['accuracy']:.4f}",
+                        'Precision': f"{metrics['precision']:.4f}",
+                        'Recall': f"{metrics['recall']:.4f}",
+                        'F1-Score': f"{metrics['f1']:.4f}",
+                        'AUC-ROC': f"{metrics['auc']:.4f}" if metrics['auc'] else 'N/A'
+                    })
+                
+                metrics_df = pd.DataFrame(metrics_data)
+                st.dataframe(metrics_df, use_container_width=True)
+                
+                # Metrics visualization
+                metrics_for_viz = ['accuracy', 'precision', 'recall', 'f1']
+                viz_data = []
+                
+                for metric in metrics_for_viz:
+                    for name, results in evaluation_results.items():
+                        if results['metrics'][metric] is not None:
+                            viz_data.append({
+                                'Model': name,
+                                'Metric': metric.upper(),
+                                'Score': results['metrics'][metric]
+                            })
+                
+                if viz_data:
+                    viz_df = pd.DataFrame(viz_data)
+                    
+                    fig = px.bar(viz_df, x='Model', y='Score', color='Metric',
+                                title='Model Performance Comparison',
+                                barmode='group')
+                    fig.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # ROC Curves
+                st.subheader("📈 ROC Curves Comparison")
+                
+                fig_roc = go.Figure()
+                roc_data_available = False
+                
+                for name, results in evaluation_results.items():
+                    if results['probabilities'] is not None:
+                        try:
+                            fpr, tpr, _ = roc_curve(st.session_state.y_test, results['probabilities'])
+                            auc_score = results['metrics']['auc']
+                            
+                            fig_roc.add_trace(go.Scatter(
+                                x=fpr, y=tpr,
+                                mode='lines',
+                                name=f'{name} (AUC = {auc_score:.3f})',
+                                line=dict(width=2)
+                            ))
+                            roc_data_available = True
+                        except Exception as e:
+                            continue
+                
+                if roc_data_available:
+                    # Add diagonal line
+                    fig_roc.add_trace(go.Scatter(
+                        x=[0, 1], y=[0, 1],
+                        mode='lines',
+                        name='Random Classifier',
+                        line=dict(dash='dash', color='black')
+                    ))
+                    
+                    fig_roc.update_layout(
+                        title='ROC Curves Comparison',
+                        xaxis_title='False Positive Rate',
+                        yaxis_title='True Positive Rate',
+                        width=800, height=600
+                    )
+                    
+                    st.plotly_chart(fig_roc, use_container_width=True)
+                else:
+                    st.info("📋 ROC curves not available (models may not support probability prediction)")
+                
+                # Model Recommendations
+                st.subheader("🎯 Model Recommendations")
+                
+                if evaluation_results:
+                    # Find best model based on different metrics
+                    best_accuracy = max(evaluation_results.items(), key=lambda x: x[1]['metrics']['accuracy'])
+                    best_f1 = max(evaluation_results.items(), key=lambda x: x[1]['metrics']['f1'])
+                    
+                    # Find best AUC (only from models that have AUC scores)
+                    auc_models = [item for item in evaluation_results.items() if item[1]['metrics']['auc'] is not None]
+                    best_auc = max(auc_models, key=lambda x: x[1]['metrics']['auc']) if auc_models else None
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>🎯 Best Accuracy</h4>
+                            <h3>{best_accuracy[0]}</h3>
+                            <p>{best_accuracy[1]['metrics']['accuracy']:.4f}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>⚖️ Best F1-Score</h4>
+                            <h3>{best_f1[0]}</h3>
+                            <p>{best_f1[1]['metrics']['f1']:.4f}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        if best_auc:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <h4>📈 Best AUC-ROC</h4>
+                                <h3>{best_auc[0]}</h3>
+                                <p>{best_auc[1]['metrics']['auc']:.4f}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown("""
+                            <div class="metric-card">
+                                <h4>📈 AUC-ROC</h4>
+                                <h3>N/A</h3>
+                                <p>Not Available</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # Ensemble recommendation
+                    st.markdown("---")
+                    st.markdown("### 🏆 Recommended Approach")
+                    st.info(f"""
+                    **📈 Performance Analysis:**
+                    
+                    Based on the evaluation results:
+                    - **Best Accuracy**: {best_accuracy[0]} ({best_accuracy[1]['metrics']['accuracy']:.4f})
+                    - **Best F1-Score**: {best_f1[0]} ({best_f1[1]['metrics']['f1']:.4f})
+                    - **Models Evaluated**: {len(evaluation_results)}
+                    
+                    **🎯 Recommendations:**
+                    - Use **{best_f1[0]}** for balanced performance
+                    - Consider ensemble of top 3 performing models
+                    - Focus on F1-score for this classification task
+                    """)
+            
+            # Show previous evaluation results if available
+            elif 'evaluation_results' in st.session_state:
+                st.info("📊 Previous evaluation results are available. Click the button above to re-evaluate or view the cached results below.")
+                
+                # Display cached results summary
+                results = st.session_state.evaluation_results
+                st.subheader("📈 Previous Evaluation Summary")
+                
+                summary_data = []
+                for name, result in results.items():
+                    metrics = result['metrics']
+                    summary_data.append({
+                        'Model': name,
+                        'Accuracy': f"{metrics['accuracy']:.4f}",
+                        'F1-Score': f"{metrics['f1']:.4f}"
+                    })
+                
+                summary_df = pd.DataFrame(summary_data)
+                st.dataframe(summary_df, use_container_width=True)
+            
+            else:
+                st.info("📊 Click the button above to evaluate all trained models on the test set.")
+                
+                # Show model list
+                st.subheader("🤖 Available Trained Models")
+                model_list = list(st.session_state.models.keys())
+                for i, model_name in enumerate(model_list, 1):
+                    st.write(f"{i}. **{model_name}** ✅")
+                
+                st.success(f"Total trained models: **{len(model_list)}**")
         # Evaluate all models on test set
         if st.button("📊 Evaluate Models on Test Set"):
             with st.spinner("Evaluating models on test set..."):

@@ -1,0 +1,13 @@
+[server]
+# Disable file watching to avoid inotify issues
+fileWatcherType = "none"
+runOnSave = false
+
+# Set memory limits
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
