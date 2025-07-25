@@ -99,38 +99,76 @@ page = st.sidebar.selectbox("Choose a page:",
 def load_data():
     """Load and preprocess the cricket data"""
     try:
-        data = pd.read_csv('final_data.csv')
-        # Drop the unnamed index column
-        if 'Unnamed: 0' in data.columns:
-            data = data.drop('Unnamed: 0', axis=1)
-        if '' in data.columns:
-            data = data.drop('', axis=1)
-        return data
+        # Try different possible file names
+        possible_files = ['final_data.csv', 'cricket_data.csv', 'data.csv']
+        
+        for filename in possible_files:
+            try:
+                data = pd.read_csv(filename)
+                # Drop the unnamed index column if it exists
+                columns_to_drop = [col for col in data.columns if 'Unnamed' in str(col) or col == '']
+                if columns_to_drop:
+                    data = data.drop(columns_to_drop, axis=1)
+                
+                # Validate required columns
+                required_columns = ['batting_team', 'bowling_team', 'city', 'runs_left', 
+                                  'balls_left', 'wickets', 'total_runs_x', 'crr', 'rrr', 'result']
+                
+                missing_columns = [col for col in required_columns if col not in data.columns]
+                if missing_columns:
+                    st.error(f"Missing required columns: {missing_columns}")
+                    st.write("Available columns:", list(data.columns))
+                    return None
+                
+                st.success(f"✅ Data loaded successfully from {filename}")
+                return data
+                
+            except FileNotFoundError:
+                continue
+        
+        st.error("❌ Cricket data file not found. Please ensure 'final_data.csv' is in the app directory.")
+        return None
+        
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"❌ Error loading data: {str(e)}")
         return None
 
 def preprocess_data(df):
     """Preprocess the data for machine learning"""
-    # Create label encoders for categorical variables
-    le_batting = LabelEncoder()
-    le_bowling = LabelEncoder()
-    le_city = LabelEncoder()
-    
-    # Encode categorical variables
-    df_processed = df.copy()
-    df_processed['batting_team_encoded'] = le_batting.fit_transform(df['batting_team'])
-    df_processed['bowling_team_encoded'] = le_bowling.fit_transform(df['bowling_team'])
-    df_processed['city_encoded'] = le_city.fit_transform(df['city'])
-    
-    # Select features for modeling
-    feature_cols = ['batting_team_encoded', 'bowling_team_encoded', 'city_encoded', 
-                   'runs_left', 'balls_left', 'wickets', 'total_runs_x', 'crr', 'rrr']
-    
-    X = df_processed[feature_cols]
-    y = df_processed['result']
-    
-    return X, y, le_batting, le_bowling, le_city
+    try:
+        # Create label encoders for categorical variables
+        le_batting = LabelEncoder()
+        le_bowling = LabelEncoder()
+        le_city = LabelEncoder()
+        
+        # Encode categorical variables
+        df_processed = df.copy()
+        df_processed['batting_team_encoded'] = le_batting.fit_transform(df['batting_team'])
+        df_processed['bowling_team_encoded'] = le_bowling.fit_transform(df['bowling_team'])
+        df_processed['city_encoded'] = le_city.fit_transform(df['city'])
+        
+        # Select features for modeling
+        feature_cols = ['batting_team_encoded', 'bowling_team_encoded', 'city_encoded', 
+                       'runs_left', 'balls_left', 'wickets', 'total_runs_x', 'crr', 'rrr']
+        
+        # Check if all feature columns exist
+        missing_features = [col for col in feature_cols if col not in df_processed.columns]
+        if missing_features:
+            st.error(f"Missing features after encoding: {missing_features}")
+            return None, None, None, None, None
+        
+        X = df_processed[feature_cols]
+        y = df_processed['result']
+        
+        # Validate data types
+        X = X.fillna(0)  # Handle any NaN values
+        y = y.fillna(0)  # Handle any NaN values
+        
+        return X, y, le_batting, le_bowling, le_city
+        
+    except Exception as e:
+        st.error(f"❌ Error preprocessing data: {str(e)}")
+        return None, None, None, None, None
 
 def train_models(X_train, y_train):
     """Train multiple machine learning models with detailed progress tracking"""
@@ -238,18 +276,30 @@ def train_models(X_train, y_train):
 
 def evaluate_model(model, X_test, y_test):
     """Evaluate a trained model"""
-    y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
-    
-    metrics = {
-        'accuracy': accuracy_score(y_test, y_pred),
-        'precision': precision_score(y_test, y_pred),
-        'recall': recall_score(y_test, y_pred),
-        'f1': f1_score(y_test, y_pred),
-        'auc': roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else None
-    }
-    
-    return metrics, y_pred, y_pred_proba
+    try:
+        y_pred = model.predict(X_test)
+        y_pred_proba = None
+        
+        # Check if model supports predict_proba
+        if hasattr(model, 'predict_proba'):
+            try:
+                y_pred_proba = model.predict_proba(X_test)[:, 1]
+            except:
+                y_pred_proba = None
+        
+        metrics = {
+            'accuracy': accuracy_score(y_test, y_pred),
+            'precision': precision_score(y_test, y_pred, zero_division=0),
+            'recall': recall_score(y_test, y_pred, zero_division=0),
+            'f1': f1_score(y_test, y_pred, zero_division=0),
+            'auc': roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else None
+        }
+        
+        return metrics, y_pred, y_pred_proba
+        
+    except Exception as e:
+        st.error(f"❌ Error evaluating model: {str(e)}")
+        return None, None, None
 
 # Home Page
 if page == "🏠 Home":
