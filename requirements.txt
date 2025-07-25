@@ -1,4 +1,25 @@
+# Core Streamlit and Web Framework
+streamlit
+
+# Data Manipulation and Analysis
 pandas
 numpy
+
+# Machine Learning
 scikit-learn
-streamlit
+
+# Data Visualization
+plotly
+seaborn
+matplotlib
+
+# Optional: For better performance
+numba
+
+# Optional: For enhanced data processing
+scipy
+
+# Optional: For better memory management
+psutil
+
+watchdog
